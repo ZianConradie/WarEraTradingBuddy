@@ -78,6 +78,7 @@ This will happen once every hour, on the hour.
 
 # KNOWN ISSUES
 - main.py automatically fetches the latest price, if no prices has been saved for that day, meaning at midnight every day, the script will fetch those items at midnight, and doesnt update the prices for the rest of the day.
+- The dataset that we download the prices from doesnt have red cases for some reason.
 
 # TODO List
 - Maybe related items  such as iron and steel should have eachover's prices as context / input. Maybe that will help?
