@@ -48,7 +48,7 @@ import predict
 # CONFIGURATION
 # ============================================================
 
-TOPIC = "WarEraTrading-0481958172"
+TOPIC = "WarEraTrading-**********"
 
 NOTIFICATION_PRIORITY = 3 # popup, no vibration, no sound
 
