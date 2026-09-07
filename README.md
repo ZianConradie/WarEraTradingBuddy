@@ -1,84 +1,76 @@
 # WarEraTradingBuddy
-A Python app that predicts future prices for the warera.io stock market, and automatically notifies you through "ntfy" if a trading oppurtunity appears.
 
-# How to get started
-This really is the bare minimum to get started, can some collaborators pls make this stuff better, thanks
+WarEraTradingBuddy downloads public WarEra market history, trains one GRU price model per item, and can send ntfy alerts when a forecast indicates a possible turning point.
 
-# MOBILE Setup:
-1. Download the "ntfy" app.
-2. Press the plus button (if applicable)
-3. By Topic Name, enter anything you want. This will kind of be the "ID" of your project.
-   I suggest calling it something reasonable, and adding 10 random digits at the end.
-   While not strictly neccecary, this helps so that other people won't get your notifications.
-5. Press "Subscribe"
+It is decision-support software. It does not place, cancel, or modify in-game orders. Forecasts can be wrong, and the displayed signal-strength score is a heuristic rather than a calibrated probability.
 
-# PC Setup:
+## What changed
 
-## 1. Run "download_history.py"
-This file will download all price history data from present day to as far back as he can and save it in /price_history/
+- The current day's market sheet is refreshed on every run instead of being frozen at the first observation.
+- The missing `predict.py` runtime is included, so a fresh clone can train and run.
+- Direct production-chain markets are supplied as lagged context during training. For example, Iron and Steel can inform one another without future-price leakage.
+- Generated history, models, graphs, virtual environments, and secrets are excluded from Git.
+- Runtime settings come from environment variables.
 
-## 2. Edit "train.py"
-At line 48-50, you will see GRU settings:
+Models trained before the related-market feature was added still load. Run `train.py` again to train five-feature models that use the new context.
 
+## Requirements
+
+- Python 3.10 or newer
+- Internet access to the public Google Sheets history and ntfy
+
+Create an environment and install dependencies:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
-# GRU settings.
-GRU_HIDDEN_SIZE = 128
-GRU_LAYERS = 2
+
+On macOS or Linux, activate with `source .venv/bin/activate`.
+
+## Setup
+
+1. Run `python download_history.py` to download up to 365 daily market sheets into `price_history/`.
+2. Review the training constants near the top of `train.py`. The defaults are suitable for a modest CPU, although training every market can take time.
+3. Run `python train.py`. Checkpoints are written to `price_models/`.
+4. Install the [ntfy app](https://ntfy.sh/) and subscribe to a private, hard-to-guess topic name.
+5. Set that topic before starting the notifier.
+
+```powershell
+$env:NTFY_TOPIC = "WarEraTrading-your-private-topic"
+python main.py
 ```
 
-These are the most basic settings of your model that will be predicting the prices.
-The better your computer, the higher numbers you can use here, but I'm running a 13th gen i3 CPU, and default settings work.
+`main.py` runs immediately and then checks again on each hour.
 
-## 3. Run "train.py"
-Depending on your settings and computer, this might take a while (or not).
-All this will do is train a model for each item in warera and save them in /price_models/
+## Configuration
 
-## 4. Edit "main.py"
-This is what will allow you to recieve the notifications on your phone.
-There are 4 main things you'll edit on line 47-63.
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `NTFY_TOPIC` | unset | Required ntfy topic name |
+| `NTFY_PRIORITY` | `3` | ntfy priority from 1 to 5 |
+| `PREDICTION_DAYS` | `3` | Forecast horizon |
+| `MIN_HISTORY_DAYS` | `30` | Consecutive days loaded for inference |
+| `TREND_DAYS` | `2` | Recent observations used to identify direction |
+| `MIN_SIGNAL_STRENGTH` | `0.95` | Minimum heuristic score needed for an alert |
 
+## Data and model notes
+
+- History comes from the public `Economy_History_YYYY-MM-DD` Google Sheets tabs configured in `download_history.py`.
+- A complete current-day CSV is written to a temporary file before replacing the prior snapshot.
+- Related-market context uses only movements visible on each historical date. Unknown future related-market movement is neutral during recursive prediction.
+- The model predicts market midpoints, not executable fills. Always inspect the order book, spread, available quantity, and fees before acting.
+- Red/Elite Case coverage depends on the upstream dataset and may be absent.
+
+## Tests
+
+```powershell
+python -m unittest discover -s tests
 ```
-# ============================================================
-# CONFIGURATION
-# ============================================================
 
-TOPIC = "WarEraTrading-********"
+## Next improvements
 
-NOTIFICATION_PRIORITY = 3 # popup, no vibration, no sound
-
-# Number of future days to predict.
-PREDICTION_DAYS = 2+1
-MIN_HISTORY_DAYS = 30
-
-# Number of real historical days used to determine trend.
-TREND_DAYS = 2
-
-# Only send notifications at or above this confidence.
-MIN_CONFIDENCE = 0.95
-```
-"TOPIC" is whatever name you chose earlier. It MUST be exactly the same.
-
-"NOTIFICATION_PRIORITY" handles how the notification gets sent to your phone.
-1-3: No Sound, No Vibration, No Popup
-4: No Sound, Short Vibration, Popup
-5: Sound, long Vibration, popup.
-
-3 is default.
-
-"PREDICTION_DAYS" is how far out the script will look for price reversals.
-Default is 2+1, meaning it will look 2 days into the future to look for price reversals.
-
-"MIN_CONFIDENCE" is the decimal of how confident the model is about the price reversal.
-Default is 0.95, meaning the model must be at least 95% sure the reversal is going to happen before sending a notification.
-
-## 5. Run "main.py"
-The script should immidietely search for trading oppurtunities, and send a notification if any oppurtunities appear.
-This will happen once every hour, on the hour.
-
-
-# KNOWN ISSUES
-- main.py automatically fetches the latest price, if no prices has been saved for that day, meaning at midnight every day, the script will fetch those items at midnight, and doesnt update the prices for the rest of the day.
-- The dataset that we download the prices from doesnt have red cases for some reason.
-
-# TODO List
-- Maybe related items  such as iron and steel should have eachover's prices as context / input. Maybe that will help?
+- Add walk-forward backtesting and calibrate signal scores against observed outcomes.
+- Add order-book spread and depth from an approved public data source.
+- Add reliable Red/Elite Case history if the source dataset begins publishing it.
