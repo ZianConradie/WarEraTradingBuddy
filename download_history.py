@@ -63,18 +63,26 @@ def download_sheet(sheet_name, output_file):
         io.StringIO(text)
     )
 
-    OUTPUT_DIR.mkdir(
+    output_file.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    with output_file.open(
+    temporary_file = output_file.with_suffix(
+        f"{output_file.suffix}.tmp"
+    )
+
+    with temporary_file.open(
         "w",
         newline="",
         encoding="utf-8",
     ) as file:
         writer = csv.writer(file)
         writer.writerows(rows)
+
+    # Replace only after a complete CSV has been written so an interrupted
+    # refresh cannot destroy the last usable current-day snapshot.
+    temporary_file.replace(output_file)
 
     return True
 
@@ -115,13 +123,20 @@ def main():
             f"{date_string}.csv"
         )
 
-        # Don't download files we already have.
-        if output_file.exists():
+        # Historical sheets are immutable. The current day's sheet is not: its
+        # prices change throughout the day, so refresh it on every run.
+        if output_file.exists() and current_date != today:
             print(
                 f"Already downloaded: "
                 f"{output_file.name}"
             )
             continue
+
+        if output_file.exists():
+            print(
+                f"Refreshing current day: "
+                f"{output_file.name}"
+            )
 
         try:
 
@@ -150,7 +165,7 @@ def main():
 
     print()
     print(
-        f"Downloaded {downloaded} new sheets."
+        f"Downloaded or refreshed {downloaded} sheets."
     )
 
 

@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from market_relationships import related_percentage_changes
+
 
 # ============================================================
 # CONFIG
@@ -81,6 +83,7 @@ class PricePredictor(nn.Module):
         Spread / PRICE_SCALE
         Price Change / PRICE_SCALE
         Percentage Price Change
+        Mean percentage change of directly related markets
 
     The 30-day sequence is processed by a GRU.
 
@@ -489,6 +492,7 @@ def create_samples_for_item(item_df):
         Spread / PRICE_SCALE
         Price Change / PRICE_SCALE
         Percentage Price Change
+        Mean percentage change of directly related markets
 
     Target:
 
@@ -608,11 +612,19 @@ def create_samples_for_item(item_df):
                 "Percentage Change"
             ]
 
+            related_change = row.get(
+                "Related Percentage Change",
+                0.0,
+            )
+
             if pd.isna(price_change):
                 price_change = 0.0
 
             if pd.isna(percentage_change):
                 percentage_change = 0.0
+
+            if pd.isna(related_change):
+                related_change = 0.0
 
             history.append(
                 [
@@ -620,6 +632,7 @@ def create_samples_for_item(item_df):
                     spread / PRICE_SCALE,
                     float(price_change) / PRICE_SCALE,
                     float(percentage_change),
+                    float(related_change),
                 ]
             )
 
@@ -815,6 +828,7 @@ def safe_item_name(item):
 def train_item(
     item,
     item_df,
+    all_history_df,
     device,
 ):
     """
@@ -827,8 +841,22 @@ def train_item(
     print("=" * 70)
 
     # --------------------------------------------------------
-    # Create samples
+    # Add same-day movements from direct production-chain neighbours. The
+    # target remains the following day, so this context introduces no future
+    # price leakage.
     # --------------------------------------------------------
+
+    related_changes = related_percentage_changes(
+        all_history_df,
+        item,
+    )
+
+    item_df = item_df.copy()
+    item_df["Related Percentage Change"] = (
+        pd.to_datetime(item_df["Date"])
+        .map(related_changes)
+        .fillna(0.0)
+    )
 
     (
         X_history,
@@ -975,7 +1003,7 @@ def train_item(
     # Model
     # --------------------------------------------------------
 
-    feature_count = 4
+    feature_count = int(X_history.shape[2])
 
     model = PricePredictor(
         feature_count=feature_count,
@@ -1354,6 +1382,7 @@ def main():
         result = train_item(
             item=item,
             item_df=item_df,
+            all_history_df=df,
             device=device,
         )
 

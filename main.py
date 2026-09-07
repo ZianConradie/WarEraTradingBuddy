@@ -6,7 +6,7 @@ Every hour on the hour, this script:
 1. Downloads any missing price-history sheets.
 2. Makes sure at least 30 consecutive days of history are available.
 3. Loads each item's independently trained AI model.
-4. Predicts the next 30 days.
+4. Predicts the configured number of future days.
 5. Looks at the previous 2 real days to determine the current trend.
 6. If the recent trend is upward:
        Follow the AI predictions until the first predicted decrease.
@@ -16,8 +16,8 @@ Every hour on the hour, this script:
        Follow the AI predictions until the first predicted increase.
        The previous predicted day is considered the bottom.
        Send a BUY notification.
-8. Includes the predicted turning-point price and confidence.
-9. Only sends notifications when confidence is at least 95%.
+8. Includes the predicted turning-point price and heuristic signal strength.
+9. Only sends notifications when signal strength reaches the configured threshold.
 10. Attaches a graph ending on the day after the turning point.
 11. Sends ONLY ONE notification per signal.
 12. Runs immediately when started, then every hour on the hour.
@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from time import sleep
 from pathlib import Path
 import math
+import os
 
 import numpy as np
 import pandas as pd
@@ -48,19 +49,19 @@ import predict
 # CONFIGURATION
 # ============================================================
 
-TOPIC = "WarEraTrading-**********"
+TOPIC = os.getenv("NTFY_TOPIC", "WarEraTrading-**********").strip()
 
-NOTIFICATION_PRIORITY = 3 # popup, no vibration, no sound
+NOTIFICATION_PRIORITY = int(os.getenv("NTFY_PRIORITY", "3"))
 
 # Number of future days to predict.
-PREDICTION_DAYS = 2+1
-MIN_HISTORY_DAYS = 30
+PREDICTION_DAYS = int(os.getenv("PREDICTION_DAYS", "3"))
+MIN_HISTORY_DAYS = int(os.getenv("MIN_HISTORY_DAYS", "30"))
 
 # Number of real historical days used to determine trend.
-TREND_DAYS = 2
+TREND_DAYS = int(os.getenv("TREND_DAYS", "2"))
 
-# Only send notifications at or above this confidence.
-MIN_CONFIDENCE = 0.95
+# This is a heuristic signal-strength threshold, not a calibrated probability.
+MIN_CONFIDENCE = float(os.getenv("MIN_SIGNAL_STRENGTH", "0.95"))
 
 # Temporary notification graphs.
 GRAPH_DIR = Path("./notification_graphs")
@@ -92,10 +93,9 @@ def calculate_prediction_confidence(
     turning_point_index,
 ):
     """
-    Estimate confidence in the predicted turning point.
+    Estimate heuristic strength of the predicted turning point.
 
-    The neural network itself does NOT output probability
-    confidence, so this is a heuristic.
+    The neural network does NOT output a calibrated probability.
 
     Factors:
 
@@ -852,7 +852,7 @@ def send_trade_notification(
             f"Set up a SELL order around this price.\n\n"
             f"Predicted turning point: "
             f"{prediction_day} day(s) from now\n"
-            f"Overall forecast confidence: "
+            f"Forecast strength score: "
             f"{confidence_percent:.1f}%"
         )
 
@@ -867,7 +867,7 @@ def send_trade_notification(
             f"Set up a BUY order around this price.\n\n"
             f"Predicted turning point: "
             f"{prediction_day} day(s) from now\n"
-            f"Overall forecast confidence: "
+            f"Forecast strength score: "
             f"{confidence_percent:.1f}%"
         )
 
@@ -1149,7 +1149,7 @@ def run_once():
         ]
 
         print(
-            f"  Confidence: "
+            f"  Signal strength: "
             f"{confidence * 100:.1f}%"
         )
 
@@ -1161,7 +1161,7 @@ def run_once():
 
             print(
                 f"  Skipping notification: "
-                f"confidence "
+                f"signal strength "
                 f"{confidence * 100:.1f}% is below "
                 f"the "
                 f"{MIN_CONFIDENCE * 100:.1f}% "
@@ -1285,7 +1285,7 @@ def main():
     )
 
     print(
-        f"Notification confidence threshold: "
+        f"Notification signal-strength threshold: "
         f"{MIN_CONFIDENCE * 100:.1f}%"
     )
 
@@ -1301,6 +1301,13 @@ def main():
     print(
         "=" * 70
     )
+
+    if not TOPIC or "*" in TOPIC:
+        print(
+            "Set NTFY_TOPIC before starting the notifier. "
+            "See README.md for setup instructions."
+        )
+        return
 
     # ========================================================
     # Prediction configuration
